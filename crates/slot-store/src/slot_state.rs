@@ -91,6 +91,9 @@ pub struct SlotState {
     /// look that way. Someone who wants it back can now ask for it, which is the whole point
     /// of the row.
     pub colour_correction: bool,
+    /// The look the game layer is drawn through: a name from `list_shaders`. Empty is the
+    /// built-in LCD mask, which is what every card written before this line meant.
+    pub shader: String,
 }
 
 /// Not derived. `read_slot_state` falls back here on a first boot, and all zeroes would
@@ -110,6 +113,7 @@ impl Default for SlotState {
             ff_speed: FF_SPEED_DEFAULT,
             ff_sound: false,
             colour_correction: false,
+            shader: String::new(),
         }
     }
 }
@@ -128,7 +132,7 @@ pub fn read_slot_state(root: &Path) -> SlotState {
 
 pub fn write_slot_state(root: &Path, s: &SlotState) -> std::io::Result<()> {
     let text = format!(
-        "cart={}\nbrightness={}\nblue_light={}\nvolume={}\nmuted={}\nclock_set={}\nutc_offset_min={}\nrumble={}\nff_speed={}\nff_sound={}\ncolour_correction={}\n",
+        "cart={}\nbrightness={}\nblue_light={}\nvolume={}\nmuted={}\nclock_set={}\nutc_offset_min={}\nrumble={}\nff_speed={}\nff_sound={}\ncolour_correction={}\nshader={}\n",
         s.cart.as_deref().unwrap_or(""),
         s.brightness,
         s.blue_light,
@@ -139,7 +143,8 @@ pub fn write_slot_state(root: &Path, s: &SlotState) -> std::io::Result<()> {
         s.rumble as u8,
         s.ff_speed,
         s.ff_sound as u8,
-        s.colour_correction as u8
+        s.colour_correction as u8,
+        s.shader
     );
     atomic_write(&state_path(root), text.as_bytes())
 }
@@ -165,6 +170,7 @@ fn parse(text: &str) -> Option<SlotState> {
     let mut ff_speed = None;
     let mut ff_sound = None;
     let mut colour_correction = None;
+    let mut shader = None;
     for line in text.lines().filter(|l| !l.is_empty()) {
         let Some((key, value)) = line.split_once('=') else {
             continue;
@@ -187,6 +193,7 @@ fn parse(text: &str) -> Option<SlotState> {
             "ff_speed" => ff_speed = ff_speed_value(value),
             "ff_sound" => ff_sound = flag(value),
             "colour_correction" => colour_correction = flag(value),
+            "shader" => shader = Some(value.to_string()),
             _ => {}
         }
     }
@@ -204,6 +211,7 @@ fn parse(text: &str) -> Option<SlotState> {
         ff_speed: ff_speed.unwrap_or(fallback.ff_speed),
         ff_sound: ff_sound.unwrap_or(fallback.ff_sound),
         colour_correction: colour_correction.unwrap_or(fallback.colour_correction),
+        shader: shader.unwrap_or(fallback.shader),
     })
 }
 

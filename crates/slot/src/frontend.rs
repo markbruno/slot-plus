@@ -3,10 +3,10 @@
 
 use std::time::{Duration, Instant};
 
-use slot_gfx::{Compositor, Draw, TexId, OUT_H, OUT_W};
+use slot_gfx::{Compositor, Draw, ShaderChoice, TexId, OUT_H, OUT_W};
 use slot_input::{InputSource, Millis};
 use slot_power::{Platform, Power};
-use slot_store::format_stamp;
+use slot_store::{format_stamp, SHADER_LCD, SHADER_OFF};
 use slot_ui::{
     arrows_hint_face, badge_face, cart_face, cart_shadow, chip_face, chip_shadow_face,
     date_time_text, hhmm, hint_face, icon_face, menu_face, photo_face, quick_caret_face,
@@ -66,6 +66,9 @@ pub struct Frontend {
     clocks: Clocks,
     about: AboutFace,
     quick_clock: QuickClock,
+    /// Shader's value in the quick menu. The same shape as the clock's: a line of menu type in
+    /// both inks and the text it was built for.
+    quick_shader: QuickClock,
 }
 
 /// Date & Time's value in the quick menu, grey and lit, and the text they were built for.
@@ -135,6 +138,7 @@ impl Frontend {
             clocks: Clocks::default(),
             about: AboutFace::default(),
             quick_clock: QuickClock::default(),
+            quick_shader: QuickClock::default(),
         }
     }
 
@@ -351,6 +355,8 @@ impl Frontend {
         sync_clock(self.session.app_mut(), compositor, &mut self.clocks);
         sync_about(self.session.app_mut(), compositor, &mut self.about);
         sync_quick_clock(self.session.app_mut(), compositor, &mut self.quick_clock);
+        sync_quick_shader(self.session.app_mut(), compositor, &mut self.quick_shader);
+        sync_shader(&mut self.session, compositor);
         sync_core_picker(
             self.session.app_mut(),
             compositor,
@@ -578,6 +584,73 @@ fn sync_quick_clock(app: &mut App, compositor: &mut Compositor, state: &mut Quic
     let lit = upload(compositor, &mut state.lit, lit);
     app.set_quick_clock_faces((dim, dim_size.0, dim_size.1), (lit, lit_size.0, lit_size.1));
     state.shown = text;
+}
+
+/// The longest shader name the row shows whole. Past this the value runs into the label, so
+/// the rest is cut and marked.
+const SHADER_NAME_MAX: usize = 22;
+
+fn shader_display(name: &str) -> String {
+    if name.chars().count() <= SHADER_NAME_MAX {
+        return name.to_string();
+    }
+    let kept: String = name.chars().take(SHADER_NAME_MAX - 3).collect();
+    format!("{kept}...")
+}
+
+/// Shader's value, built like Date & Time's: only while the menu is up, and only when the name
+/// in hand is not the one last built.
+fn sync_quick_shader(app: &mut App, compositor: &mut Compositor, state: &mut QuickClock) {
+    if app.quick_menu().is_none() {
+        return;
+    }
+    let text = shader_display(app.shader());
+    if text == state.shown {
+        return;
+    }
+    let (dim, lit) = (
+        quick_value_face(&text, false),
+        quick_value_face(&text, true),
+    );
+    let (dim_size, lit_size) = ((dim.w, dim.h), (lit.w, lit.h));
+    let dim = upload(compositor, &mut state.dim, dim);
+    let lit = upload(compositor, &mut state.lit, lit);
+    app.set_quick_shader_faces((dim, dim_size.0, dim_size.1), (lit, lit_size.0, lit_size.1));
+    state.shown = text;
+}
+
+/// Puts the look `App` asked for on the game layer. Here rather than in `App` because only
+/// this side holds a GL context; the file is read here too, at the moment it is compiled, so a
+/// shader edited over USB is picked up the next time the row lands on it.
+///
+/// Anything that goes wrong — a file gone since boot, one that will not compile — leaves the
+/// LCD look on the panel and says so. The driver's log goes to stderr, which on the device is
+/// the log on the card, and names the line.
+fn sync_shader(session: &mut Session, compositor: &mut Compositor) {
+    let Some(name) = session.app_mut().take_shader() else {
+        return;
+    };
+    let result = match name.as_str() {
+        SHADER_LCD => compositor.set_shader(ShaderChoice::Lcd),
+        SHADER_OFF => compositor.set_shader(ShaderChoice::Plain),
+        file => {
+            let src = slot_store::shader_path(session.root(), file)
+                .and_then(|p| std::fs::read_to_string(p).ok());
+            match src {
+                Some(src) => compositor.set_shader(ShaderChoice::RetroArch(&src)),
+                None => {
+                    let _ = compositor.set_shader(ShaderChoice::Lcd);
+                    eprintln!("slot: shader: {file}.glsl could not be read");
+                    session.app_mut().shader_failed();
+                    return;
+                }
+            }
+        }
+    };
+    if let Err(e) = result {
+        eprintln!("slot: shader: {name}: {e}");
+        session.app_mut().shader_failed();
+    }
 }
 
 /// Built only once the screen is up: it is a 660 by 228 rasterisation and most sessions never

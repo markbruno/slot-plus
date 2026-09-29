@@ -11,6 +11,7 @@ mod lcd3x;
 mod pipeline;
 mod power;
 mod quad;
+mod retroshader;
 mod shaders;
 mod surface;
 
@@ -18,7 +19,7 @@ pub use draw::{Draw, TexId};
 // Built on the host too, so the port stays under the type checker and the linter that only
 // ever run there. Opening it away from the device fails at the first dlopen, not at compile.
 pub use fbdev::{egl_error, panel_mode, panel_size, FbdevSurface};
-pub use fbo::{Compositor, BACKDROP};
+pub use fbo::{Compositor, ShaderChoice, BACKDROP};
 pub use grade::{blue_light_gain, BLUE_LIGHT_MAX};
 #[cfg(target_os = "macos")]
 pub use headless::HeadlessSurface;

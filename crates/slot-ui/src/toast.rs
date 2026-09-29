@@ -25,10 +25,17 @@ pub enum Toast {
     /// rasterised per variant, so the state has to be in the string.
     ColourOn,
     ColourOff,
+    /// SELECT+X. Two variants for the same reason as the colour pair.
+    CheatsOn,
+    CheatsOff,
+    /// SELECT+X on a cart with no enabled cheat in its file, or on a core that has no cheats.
+    NoCheats,
+    /// A shader from `Shaders/` that the driver would not compile. The LCD look is back.
+    ShaderFailed,
 }
 
 impl Toast {
-    pub const ALL: [Toast; 8] = [
+    pub const ALL: [Toast; 12] = [
         Toast::StateSaved,
         Toast::StateLoaded,
         Toast::NeedsGpsp,
@@ -37,6 +44,10 @@ impl Toast {
         Toast::PeerEnded,
         Toast::ColourOn,
         Toast::ColourOff,
+        Toast::CheatsOn,
+        Toast::CheatsOff,
+        Toast::NoCheats,
+        Toast::ShaderFailed,
     ];
 
     /// Position in `ALL`, which is the order faces are uploaded in.
@@ -59,6 +70,10 @@ impl Toast {
             Toast::PeerEnded => "Link was ended",
             Toast::ColourOn => "Correction On",
             Toast::ColourOff => "Correction Off",
+            Toast::CheatsOn => "Cheats On",
+            Toast::CheatsOff => "Cheats Off",
+            Toast::NoCheats => "No cheats enabled",
+            Toast::ShaderFailed => "Shader failed",
         }
     }
 }

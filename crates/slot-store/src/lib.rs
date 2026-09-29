@@ -1,17 +1,24 @@
 mod atomic;
+mod cheats;
 mod core;
 mod gba;
 pub mod ini;
 mod ring;
 mod scan;
+mod shaders;
 mod slot_state;
 mod stamp;
 mod theme;
 
 pub use atomic::atomic_write;
+pub use cheats::{
+    backup_save_once, cheat_path, cheats_on, enabled_codes, parse_cht, read_cheats,
+    write_cheats_on, Cheat, CHEATS_DIR, CHEATS_SWITCH_FILE,
+};
 pub use core::{core_for, read_selected_cores, write_selected_core, Core, SELECTED_CORE_FILE};
 pub use gba::{header_clean, header_code, header_title};
 pub use ring::{StateEntry, StateRing, RING_MAX};
+pub use shaders::{is_builtin, list_shaders, shader_path, SHADERS_DIR, SHADER_LCD, SHADER_OFF};
 pub use scan::{initial, is_hidden, scan, sort_key, Cart, StoreError};
 pub use slot_state::{
     read_slot_state, write_slot_state, SlotState, BLUE_LIGHT_MAX, BRIGHTNESS_MAX, FF_SPEEDS,

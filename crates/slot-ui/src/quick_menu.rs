@@ -12,6 +12,10 @@ pub enum QuickRow {
     FastForward,
     FastForwardSound,
     ColourCorrection,
+    /// The look the game layer is drawn through. Beside Colour Correction because both change
+    /// what every game looks like. Its value is a name off the card, so like Date & Time's it
+    /// is rastered by the binary rather than taken from `QuickValue`.
+    Shader,
     Rumble,
     DateTime,
     About,
@@ -32,10 +36,11 @@ impl QuickRow {
     /// between them, and what follows the pair is the settings that stand alone. Of those,
     /// colour correction is in effect every second a game is on screen while rumble only matters
     /// when a cart asks for the motor, so the unconditional one comes first.
-    pub const ALL: [QuickRow; 6] = [
+    pub const ALL: [QuickRow; 7] = [
         QuickRow::FastForward,
         QuickRow::FastForwardSound,
         QuickRow::ColourCorrection,
+        QuickRow::Shader,
         QuickRow::Rumble,
         QuickRow::DateTime,
         QuickRow::About,
@@ -51,6 +56,7 @@ impl QuickRow {
             QuickRow::FastForward => "Fast Forward",
             QuickRow::FastForwardSound => "Fast Forward Sound",
             QuickRow::ColourCorrection => "Colour Correction",
+            QuickRow::Shader => "Shader",
             QuickRow::Rumble => "Rumble",
             QuickRow::DateTime => "Date & Time",
             QuickRow::About => "About",
@@ -262,6 +268,8 @@ pub struct QuickMenu<'a> {
     pub values: [Option<QuickValue>; QuickRow::ALL.len()],
     /// Date & Time's value, grey then lit, once the binary has built it.
     pub clock: Option<[(TexId, u32, u32); 2]>,
+    /// Shader's value, grey then lit, built the same way: the name comes off the card.
+    pub shader: Option<[(TexId, u32, u32); 2]>,
     /// `None` until boot has uploaded them, when only the ground and the bar are drawn.
     pub faces: Option<&'a QuickMenuFaces>,
 }
@@ -297,6 +305,7 @@ impl QuickMenu<'_> {
             }
             let value = match row {
                 QuickRow::DateTime => self.clock.map(|c| c[lit as usize]),
+                QuickRow::Shader => self.shader.map(|c| c[lit as usize]),
                 _ => self.values[row.index()]
                     .and_then(|v| faces.values.get(v.index()))
                     .map(|v| v[lit as usize]),

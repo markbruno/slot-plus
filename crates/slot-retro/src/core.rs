@@ -126,6 +126,16 @@ pub trait RetroCore: Send {
     /// never offered one simply has nothing to hear this through, and the default does
     /// nothing.
     fn stop_link(&mut self) {}
+    /// Replaces every cheat the core holds with `codes`, each one a code as a libretro `.cht`
+    /// file spells it (lines joined by `+`). An empty list clears them. Only cheats that are
+    /// on belong in the list: mGBA's libretro port ignores the `enabled` flag and applies
+    /// whatever it is handed.
+    ///
+    /// Returns whether the core took them. A core with no cheat support answers `false`, which
+    /// is what the default does.
+    fn set_cheats(&mut self, _codes: &[String]) -> bool {
+        false
+    }
 }
 
 #[cfg(test)]

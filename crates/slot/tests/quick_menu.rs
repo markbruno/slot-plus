@@ -117,6 +117,7 @@ fn up_and_down_move_the_bar_and_stop_at_the_ends() {
     for want in [
         QuickRow::FastForwardSound,
         QuickRow::ColourCorrection,
+        QuickRow::Shader,
         QuickRow::Rumble,
         QuickRow::DateTime,
         QuickRow::About,
@@ -173,7 +174,8 @@ fn rumble_and_fast_forward_sound_flip_on_either_arrow_and_save() {
     );
     press(&mut a, Btn::Right);
     assert_eq!(card(&d), (false, true));
-    // Two rows down: Colour Correction now sits between the Fast Forward pair and Rumble.
+    // Three rows down: Colour Correction and Shader sit between the Fast Forward pair and Rumble.
+    press(&mut a, Btn::Down);
     press(&mut a, Btn::Down);
     press(&mut a, Btn::Down);
     press(&mut a, Btn::Right);
@@ -552,4 +554,56 @@ fn only_the_clock_from_the_menu_offers_b_back() {
         !drawn(&out, 400),
         "the first boot clock offers a way back it does not have"
     );
+}
+
+/// With no `Shaders/` files the row holds the two looks slot draws itself, LCD first. Each step
+/// is on the card at once and handed to the binary exactly once; a press against either end
+/// changes nothing and hands over nothing.
+#[test]
+fn the_shader_row_steps_through_the_looks_and_stops_at_the_ends() {
+    let (d, mut a, _) = on_carousel();
+    assert_eq!(a.shader(), "LCD");
+    assert_eq!(a.take_shader().as_deref(), Some("LCD"), "boot did not ask for its look");
+    open_at(&mut a, QuickRow::Shader);
+    press(&mut a, Btn::Left);
+    assert_eq!(a.take_shader(), None, "moved off the first look");
+    press(&mut a, Btn::Right);
+    assert_eq!(a.shader(), "Off");
+    assert_eq!(a.take_shader().as_deref(), Some("Off"));
+    assert_eq!(read_slot_state(d.path()).shader, "Off");
+    press(&mut a, Btn::Right);
+    assert_eq!(a.take_shader(), None, "ran past the last look");
+}
+
+/// A file in `Shaders/` is a look of its own, after the two built in. One named after a built-in
+/// is not allowed to shadow it.
+#[test]
+fn a_shader_on_the_card_joins_the_row_after_the_built_in_looks() {
+    let d = tmp_root_with_carts(&["Emerald", "Fusion"]);
+    std::fs::create_dir_all(d.path().join("Shaders")).unwrap();
+    std::fs::write(d.path().join("Shaders/zfast_lcd.glsl"), "void main() {}").unwrap();
+    std::fs::write(d.path().join("Shaders/lcd.glsl"), "void main() {}").unwrap();
+    std::fs::write(d.path().join("Shaders/readme.txt"), "not a shader").unwrap();
+    write_slot_state(
+        d.path(),
+        &SlotState {
+            clock_set: true,
+            shader: "zfast_lcd".into(),
+            ..SlotState::default()
+        },
+    )
+    .unwrap();
+    let (a, _) = app_booting_at(d.path(), CLOCK_IS_SET);
+    assert_eq!(a.shaders(), ["LCD", "Off", "zfast_lcd"]);
+    assert_eq!(a.shader(), "zfast_lcd");
+}
+
+/// A card that remembers a file since taken off it reads as the default look.
+#[test]
+fn a_shader_no_longer_on_the_card_reads_as_lcd() {
+    let (_d, a, _) = on_carousel_with(SlotState {
+        shader: "gone".into(),
+        ..SlotState::default()
+    });
+    assert_eq!(a.shader(), "LCD");
 }

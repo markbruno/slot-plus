@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use slot_input::{Action, Gestures, Millis, RawEvent};
 use slot_retro::Rumble;
-use slot_ui::FfState;
+use slot_ui::{FfState, Toast};
 
 use crate::app::{App, Phase};
 use crate::audio::{open_sink, AudioSink, Ring, Sfx, GBA_HZ};
@@ -98,6 +98,11 @@ impl Session {
 
     pub fn app(&self) -> &App {
         &self.app
+    }
+
+    /// The content root: the card, or wherever the host build was pointed.
+    pub fn root(&self) -> &std::path::Path {
+        &self.root
     }
 
     pub fn app_mut(&mut self) -> &mut App {
@@ -268,6 +273,11 @@ impl Session {
                     emu.set_option(key, value);
                 }
             }
+        }
+        // SELECT+X. Carried here for the same reason colour correction is: `App` never touches
+        // the card's cheat files or the core.
+        if self.app.take_cheats_toggle() {
+            self.toggle_cheats();
         }
         // A link picked in a mode the running core was not loaded with. Carried out here for the
         // same reason the wire is: `App` never touches the core.
@@ -574,6 +584,16 @@ impl Session {
         );
         // A cart seated after the level was lowered has to start there, not at full.
         emu.set_volume(self.app.output_volume());
+        // Queued behind the load, which is the first thing the worker does, so they land on a
+        // loaded game. Never for a cable session: both devices run both consoles from the
+        // host's state, and a cheat on one is a machine the other is not simulating.
+        if self.app.link_player().is_none() && slot_store::cheats_on(&self.root, stem) {
+            let codes = slot_store::enabled_codes(&slot_store::read_cheats(&self.root, stem));
+            if !codes.is_empty() {
+                slot_store::backup_save_once(&self.root, stem);
+                emu.set_cheats(codes);
+            }
+        }
         self.app.set_snapshot(Box::new(emu.snapshot()));
         self.emu = Some(emu);
     }
@@ -592,6 +612,37 @@ impl Session {
         self.emu = None;
         self.spawn_core(stem, serial);
         self.reloading = true;
+    }
+
+    /// SELECT+X: the seated cart's switch flipped, written to the card, and the cheats it now
+    /// names handed to the core. The file is read again rather than remembered, so a `.cht`
+    /// edited over USB since the cart went in is what runs.
+    fn toggle_cheats(&mut self) {
+        let Some(stem) = self.app.seated_cart().map(|c| c.stem.clone()) else {
+            return;
+        };
+        let Some(emu) = &self.emu else {
+            return;
+        };
+        let codes = slot_store::enabled_codes(&slot_store::read_cheats(&self.root, &stem));
+        if codes.is_empty() {
+            self.app.show_toast(Toast::NoCheats);
+            return;
+        }
+        let on = !slot_store::cheats_on(&self.root, &stem);
+        if let Err(e) = slot_store::write_cheats_on(&self.root, &stem, on) {
+            // Still carried out: the game in hand is what the player is looking at, and the
+            // card only decides what the next insert starts with.
+            eprintln!("slot: cheats: could not write the switch for {stem}: {e}");
+        }
+        if on {
+            slot_store::backup_save_once(&self.root, &stem);
+            emu.set_cheats(codes);
+            self.app.show_toast(Toast::CheatsOn);
+        } else {
+            emu.set_cheats(Vec::new());
+            self.app.show_toast(Toast::CheatsOff);
+        }
     }
 
     /// Follows a reload for a link to its end, which `App` is waiting on. A core that will not

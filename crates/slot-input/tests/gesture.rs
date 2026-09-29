@@ -529,6 +529,17 @@ fn select_and_y_toggles_colour_correction_and_costs_the_game_nothing() {
     assert_eq!(g.feed(Up(Select), 200), vec![GbaUp(Select)]);
 }
 
+/// SELECT+X flips the cart's cheats. X is not a GBA button either, so this takes nothing from
+/// the game, and both edges of it belong to the chord.
+#[test]
+fn select_and_x_toggles_cheats_and_costs_the_game_nothing() {
+    let mut g = Gestures::new();
+    assert_eq!(g.feed(Down(Select), 0), vec![GbaDown(Select)]);
+    assert_eq!(g.feed(Down(X), 10), vec![CheatsToggle]);
+    assert!(g.feed(Up(X), 40).is_empty());
+    assert_eq!(g.feed(Up(Select), 200), vec![GbaUp(Select)]);
+}
+
 /// A bare Y is still the switcher's own button.
 #[test]
 fn y_on_its_own_is_untouched_by_the_colour_chord() {

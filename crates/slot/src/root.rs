@@ -16,8 +16,10 @@ use std::path::{Path, PathBuf};
 ///
 /// Parents come before their children: `ensure` creates each in turn, and so does the test
 /// harness's own root.
-pub const DIRS: [&str; 11] = [
+pub const DIRS: [&str; 14] = [
     "BIOS",
+    "Cheats",
+    "Cheats/GBA",
     "Games",
     "Games/GBA",
     "Labels",
@@ -26,6 +28,7 @@ pub const DIRS: [&str; 11] = [
     "Saves/GBA",
     "States",
     "States/GBA",
+    "Shaders",
     "System",
     "Wallpapers",
 ];

@@ -156,6 +156,10 @@ enum Cmd {
     /// or the row that changed it does nothing until the cart is next inserted. Owned `String`s
     /// rather than `&'static str` because this crosses a channel to another thread.
     SetOption(String, String),
+    /// Every cheat the core should be running, replacing whatever it ran before. Empty turns
+    /// them all off. Sent after `spawn` queues the load, and commands are only drained once the
+    /// game is loaded, so a list sent the moment a cart goes in lands on a loaded game.
+    SetCheats(Vec<String>),
 }
 
 struct Shared {
@@ -337,6 +341,11 @@ impl EmuHandle {
         let _ = self
             .cmds
             .send(Cmd::SetOption(key.to_owned(), value.to_owned()));
+    }
+
+    /// See `Cmd::SetCheats`.
+    pub fn set_cheats(&self, codes: Vec<String>) {
+        let _ = self.cmds.send(Cmd::SetCheats(codes));
     }
 
     pub fn set_input(&self, mask: ButtonMask) {
@@ -1077,6 +1086,13 @@ impl Worker {
                 // ignores it, which is why `core::colour_option` decides whether to send one at
                 // all rather than sending to everyone and hoping.
                 core.set_option(&key, &value);
+            }
+            Cmd::SetCheats(codes) => {
+                if !core.set_cheats(&codes) && !codes.is_empty() {
+                    eprintln!("slot: cheats: this core took none of the {} sent", codes.len());
+                } else if crate::session::trace() {
+                    eprintln!("slot: cheats: {} running", codes.len());
+                }
             }
             Cmd::EndLink => {
                 self.shared.link_lost.store(false, Ordering::Relaxed);

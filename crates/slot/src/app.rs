@@ -6,7 +6,8 @@ use slot_input::{Action, Btn, MUTE_CHORD_MS};
 use slot_power::{Battery, Charge, LedState, LidPolicy, Power};
 use slot_retro::LinkChannel;
 use slot_store::{
-    format_stamp, read_slot_state, scan, write_slot_state, Cart, Core, SlotState, StateEntry,
+    format_stamp, list_shaders, read_slot_state, scan, write_slot_state, Cart, Core, SlotState,
+    StateEntry, SHADER_LCD, SHADER_OFF,
     StateRing, Theme, BLUE_LIGHT_MAX, BRIGHTNESS_MAX, FF_SPEEDS, RING_MAX, VOLUME_MAX,
 };
 use slot_ui::{
@@ -516,6 +517,16 @@ pub struct App {
     /// `core::apply_core_options` puts them, and a row that only did that would appear to do
     /// nothing until the cart was next inserted.
     colour_pending: Option<bool>,
+    /// Every look the Shader row steps through: the two built in, then `Shaders/` by name.
+    /// Read once at boot, as the carts are.
+    shaders: Vec<String>,
+    /// A look for the binary to put on the game layer, and `None` the rest of the time. Set at
+    /// boot and by the row. `App` never touches GL, so this is the same set-here, drained-there
+    /// shape as `colour_pending`; the binary is what compiles it.
+    shader_pending: Option<String>,
+    /// SELECT+X was pressed with a game on screen. `Session` owns the card and the core, so it
+    /// is what reads the cart's cheats and carries them over.
+    cheats_pending: bool,
     /// Which port this device drives once a cable session is loaded for, and `None` whenever the
     /// seated core is not being opened for one. Read by `Session::spawn_core`.
     link_player: Option<u8>,
@@ -555,6 +566,9 @@ pub struct App {
     /// Date & Time's value, grey then lit. Rebuilt by the binary when the minute turns, and only
     /// while the menu is up.
     quick_clock_faces: Option<[(TexId, u32, u32); 2]>,
+    /// Shader's value, grey then lit. Rebuilt by the binary when the name changes, and only
+    /// while the menu is up.
+    quick_shader_faces: Option<[(TexId, u32, u32); 2]>,
     /// The label, rasterised whole. Re-uploaded when the gauge moves.
     sticker_face: Option<TexId>,
     /// One picture from `Wallpapers`, behind everything the shelf draws. `None` on a card
@@ -653,6 +667,9 @@ impl App {
             snapshot: None,
             core: Core::default(),
             colour_pending: None,
+            shaders: vec![SHADER_LCD.to_string(), SHADER_OFF.to_string()],
+            shader_pending: None,
+            cheats_pending: false,
             link_player: None,
             named_core: false,
             link: None,
@@ -664,6 +681,7 @@ impl App {
             clock_faces: None,
             quick_menu_faces: None,
             quick_clock_faces: None,
+            quick_shader_faces: None,
             sticker_face: None,
             wallpaper: None,
             battery_percent: slot_ui::Printed::default(),
@@ -699,6 +717,10 @@ impl App {
         let mut app = App::new(scan(root).unwrap_or_default());
         app.root = Some(root.to_path_buf());
         app.state = read_slot_state(root);
+        app.shaders = list_shaders(root);
+        // Whatever the card remembers, including a file that has since been taken off it, which
+        // reads as the default rather than as nothing at all.
+        app.shader_pending = Some(app.shader().to_string());
         if app.state.clock_set {
             app.start();
         } else {
@@ -829,7 +851,8 @@ impl App {
             QuickRow::FastForwardSound => Some(QuickValue::flag(self.state.ff_sound)),
             QuickRow::ColourCorrection => Some(QuickValue::flag(self.state.colour_correction)),
             QuickRow::Rumble => Some(QuickValue::flag(self.state.rumble)),
-            QuickRow::DateTime | QuickRow::About => None,
+            // A name off the card, which `QuickValue` has no face for. The binary rasters it.
+            QuickRow::Shader | QuickRow::DateTime | QuickRow::About => None,
         }
     }
 
@@ -840,6 +863,48 @@ impl App {
     /// Date & Time's value, grey and lit, each with the size it was rastered at.
     pub fn set_quick_clock_faces(&mut self, dim: (TexId, u32, u32), lit: (TexId, u32, u32)) {
         self.quick_clock_faces = Some([dim, lit]);
+    }
+
+    /// Shader's value, grey and lit, each with the size it was rastered at.
+    pub fn set_quick_shader_faces(&mut self, dim: (TexId, u32, u32), lit: (TexId, u32, u32)) {
+        self.quick_shader_faces = Some([dim, lit]);
+    }
+
+    /// The look in use: the card's choice if it is still on offer, and the LCD mask if it is
+    /// not, which is also what an empty choice from a card written before the row means.
+    pub fn shader(&self) -> &str {
+        let chosen = self.state.shader.as_str();
+        self.shaders
+            .iter()
+            .find(|s| s.as_str() == chosen)
+            .map_or(SHADER_LCD, String::as_str)
+    }
+
+    /// Every look the row steps through, in order.
+    pub fn shaders(&self) -> &[String] {
+        &self.shaders
+    }
+
+    /// A look to put on the game layer, handed over once.
+    pub fn take_shader(&mut self) -> Option<String> {
+        self.shader_pending.take()
+    }
+
+    /// The binary could not compile the look it was handed, and has put the LCD mask back.
+    /// The card is left alone: the file may be fixed and the row gone back to, and a choice
+    /// that quietly changed itself would be one more thing to explain.
+    pub fn shader_failed(&mut self) {
+        self.hud.toast(Toast::ShaderFailed, self.now());
+    }
+
+    /// SELECT+X, handed over once. See `cheats_pending`.
+    pub fn take_cheats_toggle(&mut self) -> bool {
+        std::mem::take(&mut self.cheats_pending)
+    }
+
+    /// A line of the HUD for something `App` did not do itself: the cheats `Session` carried.
+    pub fn show_toast(&mut self, toast: Toast) {
+        self.hud.toast(toast, self.now());
     }
 
     pub fn set_sticker_face(&mut self, face: TexId) {
@@ -1463,6 +1528,12 @@ impl App {
                 Action::Polaroids => self.open_polaroids(),
                 Action::SaveState => self.save_state(),
                 Action::LoadState => self.load_newest(),
+                // Not while linked: the far end runs the same game without them, and two
+                // machines that differ in memory are two games, not one.
+                Action::CheatsToggle if self.link_active() || self.link_player.is_some() => {
+                    self.refuse()
+                }
+                Action::CheatsToggle => self.cheats_pending = true,
                 // Rewinding interrupts communication libretro's contract says must not be
                 // interrupted. Declined the same way every other "nothing doing" action in
                 // this file is, so the press reads as answered rather than dropped.
@@ -1533,6 +1604,7 @@ impl App {
             QuickRow::FastForward
             | QuickRow::FastForwardSound
             | QuickRow::ColourCorrection
+            | QuickRow::Shader
             | QuickRow::Rumble => {}
         }
     }
@@ -1558,6 +1630,30 @@ impl App {
                 // would take effect only the next time a core was opened, which is to say the
                 // next time the cart was inserted, which from the player's side is not at all.
                 self.colour_pending = Some(s.colour_correction);
+            }
+            // Stops at either end, as Fast Forward does, rather than wrapping: the list is short
+            // and an end that stops is how a row says it has no more.
+            QuickRow::Shader => {
+                let at = self
+                    .shaders
+                    .iter()
+                    .position(|n| n == &s.shader)
+                    .unwrap_or(0);
+                let to = match right {
+                    true => (at + 1).min(self.shaders.len().saturating_sub(1)),
+                    false => at.saturating_sub(1),
+                };
+                // Against the look in use rather than the card's spelling of it: an empty or
+                // stale choice already reads as the first look, so a press that stays there is
+                // a press against the end.
+                if to == at {
+                    return;
+                }
+                let Some(name) = self.shaders.get(to).cloned() else {
+                    return;
+                };
+                s.shader = name.clone();
+                self.shader_pending = Some(name);
             }
             QuickRow::Rumble => s.rumble = !s.rumble,
             QuickRow::DateTime | QuickRow::About => return,
@@ -2145,6 +2241,7 @@ impl App {
                 row: *row,
                 values: QuickRow::ALL.map(|r| self.quick_value(r)),
                 clock: self.quick_clock_faces,
+                shader: self.quick_shader_faces,
                 faces: self.quick_menu_faces.as_ref(),
             }
             .draw(out),
