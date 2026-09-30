@@ -7,7 +7,9 @@ use slot_gfx::{Compositor, Draw, ShaderChoice, TexId, OUT_H, OUT_W};
 use slot_input::{InputSource, Millis};
 use slot_power::{Platform, Power};
 use slot_store::{format_stamp, SHADER_LCD, SHADER_OFF};
-use slot_ui::{cheat_label_face, cheat_legend_faces, date_time_text_as, hhmm_as, CHEAT_ROWS};
+use slot_ui::{
+    cheat_label_face, cheat_legend_faces, date_time_text_as, hhmm_as, shelf_title_face, CHEAT_ROWS,
+};
 use slot_ui::{
     arrows_hint_face, badge_face, cart_face, cart_shadow, chip_face, chip_shadow_face,
     hint_face, icon_face, menu_face, photo_face, quick_caret_face,
@@ -71,6 +73,8 @@ pub struct Frontend {
     /// both inks and the text it was built for.
     quick_shader: QuickClock,
     cheats: CheatFaces,
+    /// The name over the selected cart, and the name it was built for.
+    shelf_title: (Option<TexId>, Option<String>),
 }
 
 /// The cheat list's faces: one texture per window row, reused as the list scrolls, with which
@@ -156,6 +160,7 @@ impl Frontend {
                 built: vec![None; CHEAT_ROWS],
                 ..CheatFaces::default()
             },
+            shelf_title: (None, None),
         }
     }
 
@@ -380,6 +385,7 @@ impl Frontend {
         sync_quick_shader(self.session.app_mut(), compositor, &mut self.quick_shader);
         sync_shader(&mut self.session, compositor);
         sync_cheats(self.session.app_mut(), compositor, &mut self.cheats);
+        sync_shelf_title(self.session.app_mut(), compositor, &mut self.shelf_title);
         sync_core_picker(
             self.session.app_mut(),
             compositor,
@@ -607,6 +613,24 @@ fn sync_quick_clock(app: &mut App, compositor: &mut Compositor, state: &mut Quic
     let lit = upload(compositor, &mut state.lit, lit);
     app.set_quick_clock_faces((dim, dim_size.0, dim_size.1), (lit, lit_size.0, lit_size.1));
     state.shown = text;
+}
+
+/// The selected cart's name, rebuilt only when the selection lands on a cart with another name:
+/// scrolling past a row of carts rasters each name once, as the selection reaches it.
+fn sync_shelf_title(
+    app: &mut App,
+    compositor: &mut Compositor,
+    state: &mut (Option<TexId>, Option<String>),
+) {
+    let Some(name) = app.shelf_title() else {
+        return;
+    };
+    if state.1.as_deref() == Some(name.as_str()) {
+        return;
+    }
+    let id = upload(compositor, &mut state.0, shelf_title_face(&name));
+    app.set_shelf_title_face(id);
+    state.1 = Some(name);
 }
 
 /// The cheat list's rows, rastered only for the cheats in the window and only when the cheat in

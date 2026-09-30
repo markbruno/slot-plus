@@ -59,7 +59,7 @@ pub use link_art::{
 };
 pub use plate::{
     arrows_hint_face, arrows_hint_width, cap_width, centred_hints, hint_face, hint_quad, hint_row,
-    hint_width, title_face, word_face, word_width, Hint, UndoFace, ARROW_GAP, CAP, CAP_GAP,
+    hint_width, shelf_title_face, title_face, word_face, word_width, Hint, UndoFace, SHELF_TITLE_H, SHELF_TITLE_W, ARROW_GAP, CAP, CAP_GAP,
     HINT_EDGE, HINT_GAP, HINT_H, LEGEND_GAP, TITLE_H, TITLE_W,
 };
 pub use polaroids::{photo_face, PhotoFace, Polaroids, DOT, LEGEND, PHOTO_H, PHOTO_W};

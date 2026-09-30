@@ -196,6 +196,34 @@ fn band_width(label: &str) -> u32 {
     (ink.ceil() as u32).clamp(1, LABEL_MAX_W as u32)
 }
 
+/// The name over the selected cart on the shelf: wider than the plate's title and a size up,
+/// since it is read from across the room rather than from the top of a list. Centred in a face
+/// of fixed size, so the name can change under a still frame without anything moving.
+pub const SHELF_TITLE_W: u32 = 640;
+pub const SHELF_TITLE_H: u32 = 34;
+const SHELF_TITLE_PX: f32 = 26.0;
+const SHELF_TITLE_MIN_PX: f32 = 16.0;
+
+pub fn shelf_title_face(text: &str) -> UndoFace {
+    let mut rgba = vec![0u8; (SHELF_TITLE_W * SHELF_TITLE_H * 4) as usize];
+    if let Some(font) = text::label_font() {
+        let layout = text::fit(
+            font,
+            text,
+            SHELF_TITLE_W as f32,
+            1,
+            SHELF_TITLE_PX,
+            SHELF_TITLE_MIN_PX,
+        );
+        text::draw_centred(&mut rgba, SHELF_TITLE_W, SHELF_TITLE_H, &layout, INK);
+    }
+    UndoFace {
+        rgba,
+        w: SHELF_TITLE_W,
+        h: SHELF_TITLE_H,
+    }
+}
+
 /// One line of type for the top plate, naming the entry under the eye.
 pub fn title_face(text: &str) -> UndoFace {
     let mut rgba = vec![0u8; (TITLE_W * TITLE_H * 4) as usize];

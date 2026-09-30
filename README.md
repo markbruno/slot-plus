@@ -1,4 +1,4 @@
-# slot-plus.
+# slot.
 
 A bespoke, GBA-centric frontend for the Anbernic RG SP.
 
@@ -61,6 +61,12 @@ copy until you're sure.
 
 mGBA supports GameShark, Action Replay and CodeBreaker codes. If a code does nothing on gpSP,
 try the game on mGBA.
+
+## Game names on the shelf
+
+The selected cartridge's name is shown above it on the shelf. It comes from the rom's file
+name with region and version tags like `(USA)` or `[!]` removed, so rename the file to change
+it.
 
 ## 12-hour clock
 

@@ -11,8 +11,11 @@ use slot_store::{
     StateRing, Theme, BLUE_LIGHT_MAX, BRIGHTNESS_MAX, FF_SPEEDS, RING_MAX, VOLUME_MAX,
 };
 use slot_ui::{
-    cheat_window, CheatMenu, CHEAT_ROWS,
+    cheat_window, clean_label, rest_y, CheatMenu, CART_H, CHEAT_ROWS, SHELF_TITLE_H, SHELF_TITLE_W,
 };
+
+/// The gap between the bottom of the shelf's title and the top of the selected cart.
+const SHELF_TITLE_GAP: f32 = 22.0;
 use slot_ui::{
     board_from, board_zoom, draw_backdrop, draw_empty_slot, draw_footer, draw_sticker, ease, grown,
     lid_at, lid_from, lift_of, on_board, shelf_cart_at, ClockPicker, Draw, FfState, Hud, HudKind,
@@ -585,6 +588,9 @@ pub struct App {
     cheat_count_face: Option<(TexId, u32)>,
     /// B DONE and A ON / OFF, uploaded once at boot.
     cheat_legend_faces: Option<[(TexId, u32); 2]>,
+    /// The selected cart's name over it on the shelf, rastered by the binary each time the
+    /// selection lands on a different cart.
+    shelf_title_face: Option<TexId>,
     /// Which port this device drives once a cable session is loaded for, and `None` whenever the
     /// seated core is not being opened for one. Read by `Session::spawn_core`.
     link_player: Option<u8>,
@@ -734,6 +740,7 @@ impl App {
             cheat_row_faces: vec![None; CHEAT_ROWS],
             cheat_count_face: None,
             cheat_legend_faces: None,
+            shelf_title_face: None,
             link_player: None,
             named_core: false,
             link: None,
@@ -970,6 +977,16 @@ impl App {
     /// A line of the HUD for something `App` did not do itself: the cheats `Session` carried.
     pub fn show_toast(&mut self, toast: Toast) {
         self.hud.toast(toast, self.now());
+    }
+
+    /// The name to print over the selected cart: its file name with the region and revision
+    /// tags taken off, the same tidying a label with no picture gets. `None` on an empty shelf.
+    pub fn shelf_title(&self) -> Option<String> {
+        self.selected_stem().map(clean_label)
+    }
+
+    pub fn set_shelf_title_face(&mut self, face: TexId) {
+        self.shelf_title_face = Some(face);
     }
 
     /// Whether every clock on the panel reads 3:07 PM rather than 15:07.
@@ -2466,7 +2483,24 @@ impl App {
                             .draw_row(Some(stem), 0.0, CORE_PICKER_RECEDE * open, dim, out);
                         draw_empty_slot(out);
                     }
-                    _ => self.shelf().draw(self.shelf_shake(), out),
+                    _ => {
+                        self.shelf().draw(self.shelf_shake(), out);
+                        // Only over a cart at rest in the row: while the lid is off the
+                        // picker, not the row, is what the screen is about.
+                        if let (Some(_), Some(tex)) = (self.selected_stem(), self.shelf_title_face)
+                        {
+                            out.push(Draw::Tex {
+                                x: ((OUT_W - SHELF_TITLE_W) / 2) as f32,
+                                y: (rest_y(CART_H as f32) - SHELF_TITLE_GAP
+                                    - SHELF_TITLE_H as f32)
+                                    .round(),
+                                w: SHELF_TITLE_W as f32,
+                                h: SHELF_TITLE_H as f32,
+                                tex,
+                                alpha: 1.0,
+                            });
+                        }
+                    }
                 }
                 draw_footer(
                     self.battery,
