@@ -17,6 +17,9 @@ pub enum QuickRow {
     /// is rastered by the binary rather than taken from `QuickValue`.
     Shader,
     Rumble,
+    /// Whether every clock slot draws reads 3:07 PM rather than 15:07. Last of the rows the
+    /// arrows change, right above the Date & Time it changes the look of.
+    TwelveHour,
     DateTime,
     About,
 }
@@ -36,12 +39,13 @@ impl QuickRow {
     /// between them, and what follows the pair is the settings that stand alone. Of those,
     /// colour correction is in effect every second a game is on screen while rumble only matters
     /// when a cart asks for the motor, so the unconditional one comes first.
-    pub const ALL: [QuickRow; 7] = [
+    pub const ALL: [QuickRow; 8] = [
         QuickRow::FastForward,
         QuickRow::FastForwardSound,
         QuickRow::ColourCorrection,
         QuickRow::Shader,
         QuickRow::Rumble,
+        QuickRow::TwelveHour,
         QuickRow::DateTime,
         QuickRow::About,
     ];
@@ -58,6 +62,7 @@ impl QuickRow {
             QuickRow::ColourCorrection => "Colour Correction",
             QuickRow::Shader => "Shader",
             QuickRow::Rumble => "Rumble",
+            QuickRow::TwelveHour => "12-Hour Clock",
             QuickRow::DateTime => "Date & Time",
             QuickRow::About => "About",
         }
@@ -139,9 +144,10 @@ impl QuickValue {
     }
 }
 
-/// A size up from the power menu's rows: 30 px type on 52 px rows, which the full width has
-/// room for.
-pub const QUICK_PITCH: f32 = 52.0;
+/// A size up from the power menu's rows: 30 px type on 46 px rows. Eight rows at the 52 px this
+/// once was would run into the legend at the bottom of the panel; 46 leaves the bar a clear
+/// margin around the capitals and the last row three pixels above the legend.
+pub const QUICK_PITCH: f32 = 46.0;
 /// The first row's top, with all of them centred on the panel: derived from `QuickRow::ALL`, so
 /// a row added or removed moves the whole menu rather than hanging one off the bottom.
 pub const QUICK_TOP: f32 = (OUT_H as f32 - QUICK_PITCH * QuickRow::ALL.len() as f32) / 2.0;

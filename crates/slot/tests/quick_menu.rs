@@ -119,6 +119,7 @@ fn up_and_down_move_the_bar_and_stop_at_the_ends() {
         QuickRow::ColourCorrection,
         QuickRow::Shader,
         QuickRow::Rumble,
+        QuickRow::TwelveHour,
         QuickRow::DateTime,
         QuickRow::About,
         QuickRow::About,
@@ -606,4 +607,20 @@ fn a_shader_no_longer_on_the_card_reads_as_lcd() {
         ..SlotState::default()
     });
     assert_eq!(a.shader(), "LCD");
+}
+
+/// The clock row is a flag like Rumble: either arrow flips it, it is on the card at once, and
+/// the app reads it back for everything that prints a time.
+#[test]
+fn the_twelve_hour_row_flips_and_saves() {
+    let (d, mut a, _) = on_carousel();
+    assert!(!a.twelve_hour());
+    open_at(&mut a, QuickRow::TwelveHour);
+    assert_eq!(a.quick_value(QuickRow::TwelveHour), Some(QuickValue::Off));
+    press(&mut a, Btn::Right);
+    assert!(a.twelve_hour());
+    assert!(read_slot_state(d.path()).twelve_hour);
+    assert_eq!(a.quick_value(QuickRow::TwelveHour), Some(QuickValue::On));
+    press(&mut a, Btn::Left);
+    assert!(!read_slot_state(d.path()).twelve_hour);
 }

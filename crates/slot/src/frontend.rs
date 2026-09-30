@@ -7,9 +7,10 @@ use slot_gfx::{Compositor, Draw, ShaderChoice, TexId, OUT_H, OUT_W};
 use slot_input::{InputSource, Millis};
 use slot_power::{Platform, Power};
 use slot_store::{format_stamp, SHADER_LCD, SHADER_OFF};
+use slot_ui::{cheat_label_face, cheat_legend_faces, date_time_text_as, hhmm_as, CHEAT_ROWS};
 use slot_ui::{
     arrows_hint_face, badge_face, cart_face, cart_shadow, chip_face, chip_shadow_face,
-    date_time_text, hhmm, hint_face, icon_face, menu_face, photo_face, quick_caret_face,
+    hint_face, icon_face, menu_face, photo_face, quick_caret_face,
     quick_label_face, quick_legend_faces, quick_value_face, set_clock_hint_face, socket_face,
     sticker_face, title_face, toast_face, wallpaper_face, word_face, Icon, LinkBadge, PowerChoice,
     QuickMenuFaces, QuickRow, QuickValue, StickerFields, Toast, UndoFace, ALERT_PX, BOLT_PX,
@@ -69,6 +70,17 @@ pub struct Frontend {
     /// Shader's value in the quick menu. The same shape as the clock's: a line of menu type in
     /// both inks and the text it was built for.
     quick_shader: QuickClock,
+    cheats: CheatFaces,
+}
+
+/// The cheat list's faces: one texture per window row, reused as the list scrolls, with which
+/// list and which cheat each was last built for; and the count over the rows.
+#[derive(Default)]
+struct CheatFaces {
+    rows: Vec<Option<TexId>>,
+    built: Vec<Option<(u64, usize)>>,
+    count: Option<TexId>,
+    counted: String,
 }
 
 /// Date & Time's value in the quick menu, grey and lit, and the text they were built for.
@@ -139,6 +151,11 @@ impl Frontend {
             about: AboutFace::default(),
             quick_clock: QuickClock::default(),
             quick_shader: QuickClock::default(),
+            cheats: CheatFaces {
+                rows: vec![None; CHEAT_ROWS],
+                built: vec![None; CHEAT_ROWS],
+                ..CheatFaces::default()
+            },
         }
     }
 
@@ -227,6 +244,11 @@ impl Frontend {
             carets,
             legend,
         });
+        let cheat_legend = cheat_legend_faces().map(|f| {
+            let (tex, w, _) = up(f);
+            (tex, w)
+        });
+        self.session.app_mut().set_cheat_legend_faces(cheat_legend);
         // The open cart's parts that never change: each socket, the chip seated in each, the
         // blank chip in flight and its shadow, in `Core::ALL` order. At boot like the power
         // menu's rows, so the first frame of a lid coming off is not spent in a rasteriser.
@@ -357,6 +379,7 @@ impl Frontend {
         sync_quick_clock(self.session.app_mut(), compositor, &mut self.quick_clock);
         sync_quick_shader(self.session.app_mut(), compositor, &mut self.quick_shader);
         sync_shader(&mut self.session, compositor);
+        sync_cheats(self.session.app_mut(), compositor, &mut self.cheats);
         sync_core_picker(
             self.session.app_mut(),
             compositor,
@@ -540,7 +563,7 @@ fn sync_clock(app: &mut App, compositor: &mut Compositor, clocks: &mut Clocks) {
             app.set_clock_faces(line, hint);
         }
     }
-    let shown = hhmm(app.wall_secs());
+    let shown = hhmm_as(app.wall_secs(), app.twelve_hour());
     if shown != clocks.shown {
         let face = word_face(&shown);
         clocks.shown = shown;
@@ -571,7 +594,7 @@ fn sync_quick_clock(app: &mut App, compositor: &mut Compositor, state: &mut Quic
     if app.quick_menu().is_none() {
         return;
     }
-    let text = date_time_text(app.wall_secs());
+    let text = date_time_text_as(app.wall_secs(), app.twelve_hour());
     if text == state.shown {
         return;
     }
@@ -584,6 +607,40 @@ fn sync_quick_clock(app: &mut App, compositor: &mut Compositor, state: &mut Quic
     let lit = upload(compositor, &mut state.lit, lit);
     app.set_quick_clock_faces((dim, dim_size.0, dim_size.1), (lit, lit_size.0, lit_size.1));
     state.shown = text;
+}
+
+/// The cheat list's rows, rastered only for the cheats in the window and only when the cheat in
+/// a row changes, which is every row when the list scrolls and none while the bar moves inside
+/// the window. The count over them is rebuilt when the bar moves.
+fn sync_cheats(app: &mut App, compositor: &mut Compositor, state: &mut CheatFaces) {
+    let Some(view) = app.cheat_menu_view() else {
+        return;
+    };
+    for slot in 0..CHEAT_ROWS {
+        let index = view.top + slot;
+        if index >= view.len || state.built[slot] == Some((view.generation, index)) {
+            continue;
+        }
+        let Some(title) = app.cheat_title(index).map(str::to_string) else {
+            continue;
+        };
+        let face = cheat_label_face(&title);
+        let (w, h) = (face.w, face.h);
+        if w == 0 {
+            continue;
+        }
+        let id = upload(compositor, &mut state.rows[slot], face);
+        app.set_cheat_row_face(slot, (id, w, h));
+        state.built[slot] = Some((view.generation, index));
+    }
+    let count = format!("{} of {}", view.row + 1, view.len);
+    if count != state.counted {
+        let face = word_face(&count);
+        let w = face.w;
+        let id = upload(compositor, &mut state.count, face);
+        app.set_cheat_count_face((id, w));
+        state.counted = count;
+    }
 }
 
 /// The longest shader name the row shows whole. Past this the value runs into the label, so

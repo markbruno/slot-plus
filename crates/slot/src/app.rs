@@ -11,6 +11,9 @@ use slot_store::{
     StateRing, Theme, BLUE_LIGHT_MAX, BRIGHTNESS_MAX, FF_SPEEDS, RING_MAX, VOLUME_MAX,
 };
 use slot_ui::{
+    cheat_window, CheatMenu, CHEAT_ROWS,
+};
+use slot_ui::{
     board_from, board_zoom, draw_backdrop, draw_empty_slot, draw_footer, draw_sticker, ease, grown,
     lid_at, lid_from, lift_of, on_board, shelf_cart_at, ClockPicker, Draw, FfState, Hud, HudKind,
     Icon, LinkBadge, Millis, Placed, Polaroids, PowerChoice, QuickMenu, QuickMenuFaces, QuickRow,
@@ -387,6 +390,48 @@ pub enum Phase {
     },
 }
 
+/// The cheat list while it is up: one title and one flag per cheat in the cart's file, in the
+/// file's order, and where the bar and the window are. `App` never reads the file itself;
+/// `Session` hands the list over and collects the flags when it closes.
+#[derive(Debug)]
+struct CheatList {
+    titles: Vec<String>,
+    enabled: Vec<bool>,
+    /// What the file said when the list opened. Closing on exactly this is closing on no
+    /// change, however many flips it took to get back here.
+    opened: Vec<bool>,
+    row: usize,
+    top: usize,
+}
+
+impl CheatList {
+    fn select(&mut self, row: usize) {
+        let len = self.titles.len();
+        if len == 0 {
+            return;
+        }
+        self.row = row.min(len - 1);
+        self.top = cheat_window(self.top, self.row, len);
+    }
+
+    fn set(&mut self, on: bool) {
+        if let Some(flag) = self.enabled.get_mut(self.row) {
+            *flag = on;
+        }
+    }
+}
+
+/// What the binary needs to raster the cheat list's faces: which list this is (`generation`
+/// changes every time one opens, so a face built for another cart's cheat is never reused),
+/// the window, the bar, and how long the list is.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub struct CheatView {
+    pub generation: u64,
+    pub top: usize,
+    pub row: usize,
+    pub len: usize,
+}
+
 pub struct App {
     phase: Phase,
     /// The carousel. Where it stands is not written to the card: `Shelf::index` is where the
@@ -527,6 +572,19 @@ pub struct App {
     /// SELECT+X was pressed with a game on screen. `Session` owns the card and the core, so it
     /// is what reads the cart's cheats and carries them over.
     cheats_pending: bool,
+    /// The cheat list, while it is up. It pauses the game the way the in-game menu does.
+    cheat_menu: Option<CheatList>,
+    /// Counts the lists opened, so the binary can tell one from the next. See `CheatView`.
+    cheat_generation: u64,
+    /// The flags the list closed on, for `Session` to write back and hand to the core. Only
+    /// set when something changed.
+    cheat_commit: Option<Vec<bool>>,
+    /// One face per window row, for whichever cheat is in that row now.
+    cheat_row_faces: Vec<Option<(TexId, u32, u32)>>,
+    /// "12 OF 140" over the rows, and its width.
+    cheat_count_face: Option<(TexId, u32)>,
+    /// B DONE and A ON / OFF, uploaded once at boot.
+    cheat_legend_faces: Option<[(TexId, u32); 2]>,
     /// Which port this device drives once a cable session is loaded for, and `None` whenever the
     /// seated core is not being opened for one. Read by `Session::spawn_core`.
     link_player: Option<u8>,
@@ -670,6 +728,12 @@ impl App {
             shaders: vec![SHADER_LCD.to_string(), SHADER_OFF.to_string()],
             shader_pending: None,
             cheats_pending: false,
+            cheat_menu: None,
+            cheat_generation: 0,
+            cheat_commit: None,
+            cheat_row_faces: vec![None; CHEAT_ROWS],
+            cheat_count_face: None,
+            cheat_legend_faces: None,
             link_player: None,
             named_core: false,
             link: None,
@@ -851,6 +915,7 @@ impl App {
             QuickRow::FastForwardSound => Some(QuickValue::flag(self.state.ff_sound)),
             QuickRow::ColourCorrection => Some(QuickValue::flag(self.state.colour_correction)),
             QuickRow::Rumble => Some(QuickValue::flag(self.state.rumble)),
+            QuickRow::TwelveHour => Some(QuickValue::flag(self.state.twelve_hour)),
             // A name off the card, which `QuickValue` has no face for. The binary rasters it.
             QuickRow::Shader | QuickRow::DateTime | QuickRow::About => None,
         }
@@ -905,6 +970,138 @@ impl App {
     /// A line of the HUD for something `App` did not do itself: the cheats `Session` carried.
     pub fn show_toast(&mut self, toast: Toast) {
         self.hud.toast(toast, self.now());
+    }
+
+    /// Whether every clock on the panel reads 3:07 PM rather than 15:07.
+    pub fn twelve_hour(&self) -> bool {
+        self.state.twelve_hour
+    }
+
+    /// Puts the cheat list up over the game, one `(title, on)` per cheat, the bar on the first.
+    /// Only over a game that is playing and not already under another screen: `Session` asks
+    /// a moment after SELECT+X, and a great deal can have happened in that moment.
+    pub fn open_cheat_menu(&mut self, cheats: Vec<(String, bool)>) {
+        let playing = matches!(self.phase, Phase::Playing { .. });
+        if !playing || cheats.is_empty() || self.game_menu.is_some() || self.power_menu.is_some()
+        {
+            return;
+        }
+        let (titles, enabled): (Vec<String>, Vec<bool>) = cheats.into_iter().unzip();
+        self.cheat_generation = self.cheat_generation.wrapping_add(1);
+        self.cheat_row_faces = vec![None; CHEAT_ROWS];
+        self.cheat_menu = Some(CheatList {
+            titles,
+            opened: enabled.clone(),
+            enabled,
+            row: 0,
+            top: 0,
+        });
+    }
+
+    pub fn cheat_menu_open(&self) -> bool {
+        self.cheat_menu.is_some()
+    }
+
+    pub fn cheat_menu_view(&self) -> Option<CheatView> {
+        self.cheat_menu.as_ref().map(|m| CheatView {
+            generation: self.cheat_generation,
+            top: m.top,
+            row: m.row,
+            len: m.titles.len(),
+        })
+    }
+
+    /// The title of the cheat at `index` in the open list.
+    pub fn cheat_title(&self, index: usize) -> Option<&str> {
+        self.cheat_menu
+            .as_ref()
+            .and_then(|m| m.titles.get(index))
+            .map(String::as_str)
+    }
+
+    /// Whether the cheat at `index` in the open list is on, as the list now has it.
+    pub fn cheat_enabled(&self, index: usize) -> Option<bool> {
+        self.cheat_menu
+            .as_ref()
+            .and_then(|m| m.enabled.get(index).copied())
+    }
+
+    pub fn set_cheat_row_face(&mut self, slot: usize, face: (TexId, u32, u32)) {
+        if let Some(s) = self.cheat_row_faces.get_mut(slot) {
+            *s = Some(face);
+        }
+    }
+
+    pub fn set_cheat_count_face(&mut self, face: (TexId, u32)) {
+        self.cheat_count_face = Some(face);
+    }
+
+    pub fn set_cheat_legend_faces(&mut self, faces: [(TexId, u32); 2]) {
+        self.cheat_legend_faces = Some(faces);
+    }
+
+    /// The flags the list closed on, handed over once, and only if any of them changed.
+    pub fn take_cheat_commit(&mut self) -> Option<Vec<bool>> {
+        self.cheat_commit.take()
+    }
+
+    fn close_cheat_menu(&mut self) {
+        if let Some(m) = self.cheat_menu.take() {
+            if m.enabled != m.opened {
+                self.cheat_commit = Some(m.enabled);
+            }
+        }
+    }
+
+    /// Up and Down move the bar a cheat at a time, L and R a window at a time. A flips the one
+    /// in hand; Left turns it off and Right on, the way the quick menu's arrows change a value.
+    /// B, or SELECT+X again, closes the list and the game carries on with what it now says.
+    fn cheat_menu_input(&mut self, action: Action) {
+        if action == Action::Eject {
+            self.close_cheat_menu();
+            return self.eject();
+        }
+        let Some(m) = &mut self.cheat_menu else {
+            return;
+        };
+        match action {
+            Action::GbaDown(Btn::Up) => m.select(m.row.saturating_sub(1)),
+            Action::GbaDown(Btn::Down) => m.select(m.row + 1),
+            Action::GbaDown(Btn::L1) => m.select(m.row.saturating_sub(CHEAT_ROWS)),
+            Action::GbaDown(Btn::R1) => m.select(m.row + CHEAT_ROWS),
+            Action::GbaDown(Btn::A) => {
+                let on = !m.enabled.get(m.row).copied().unwrap_or(false);
+                m.set(on);
+            }
+            Action::GbaDown(Btn::Left) => m.set(false),
+            Action::GbaDown(Btn::Right) => m.set(true),
+            Action::GbaDown(Btn::B) | Action::CheatsToggle | Action::QuickMenu => {
+                self.close_cheat_menu()
+            }
+            _ => {}
+        }
+    }
+
+    fn draw_cheat_menu(&self, out: &mut Vec<Draw>) {
+        let Some(m) = &self.cheat_menu else {
+            return;
+        };
+        let value = |v: QuickValue| {
+            self.quick_menu_faces
+                .as_ref()
+                .and_then(|f| f.values.get(v.index()).copied())
+        };
+        CheatMenu {
+            row: m.row,
+            top: m.top,
+            enabled: &m.enabled,
+            labels: &self.cheat_row_faces,
+            off: value(QuickValue::Off),
+            on: value(QuickValue::On),
+            count: self.cheat_count_face,
+            legend: self.cheat_legend_faces,
+        }
+        .draw(out);
     }
 
     pub fn set_sticker_face(&mut self, face: TexId) {
@@ -1480,6 +1677,11 @@ impl App {
         if self.game_menu.is_some() {
             return self.game_menu_input(action);
         }
+        // The same place and for the same reasons as the in-game menu: over a game, with the
+        // device's own keys still answered above.
+        if self.cheat_menu.is_some() {
+            return self.cheat_menu_input(action);
+        }
         let now = self.now();
         match self.phase {
             Phase::Shelf => match action {
@@ -1605,7 +1807,8 @@ impl App {
             | QuickRow::FastForwardSound
             | QuickRow::ColourCorrection
             | QuickRow::Shader
-            | QuickRow::Rumble => {}
+            | QuickRow::Rumble
+            | QuickRow::TwelveHour => {}
         }
     }
 
@@ -1656,6 +1859,7 @@ impl App {
                 self.shader_pending = Some(name);
             }
             QuickRow::Rumble => s.rumble = !s.rumble,
+            QuickRow::TwelveHour => s.twelve_hour = !s.twelve_hour,
             QuickRow::DateTime | QuickRow::About => return,
         }
         self.persist();
@@ -2345,6 +2549,10 @@ impl App {
         // excluding here — the ones that own the whole panel have already returned.
         if let Some(menu) = self.game_menu {
             self.draw_game_menu(menu, out);
+        }
+        // Only a playing game can raise it, as the in-game menu, so it goes in the same place.
+        if self.cheat_menu.is_some() {
+            self.draw_cheat_menu(out);
         }
         // Over everything, in every phase. The bar is never what the user is looking at.
         self.hud.draw(self.now(), out);
@@ -4003,7 +4211,7 @@ impl App {
     pub fn polaroid_title(&self, now: &str) -> String {
         self.polaroids
             .as_ref()
-            .map_or_else(String::new, |p| p.title(now))
+            .map_or_else(String::new, |p| p.title_as(now, self.state.twelve_hour))
     }
 
     pub fn set_polaroid_title_face(&mut self, face: TexId) {

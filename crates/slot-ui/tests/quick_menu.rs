@@ -100,6 +100,7 @@ fn the_rows_run_in_the_order_the_user_chose() {
             "Colour Correction",
             "Shader",
             "Rumble",
+            "12-Hour Clock",
             "Date & Time",
             "About"
         ]

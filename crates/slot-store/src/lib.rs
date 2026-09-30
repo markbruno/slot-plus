@@ -12,8 +12,8 @@ mod theme;
 
 pub use atomic::atomic_write;
 pub use cheats::{
-    backup_save_once, cheat_path, cheats_on, enabled_codes, parse_cht, read_cheats,
-    write_cheats_on, Cheat, CHEATS_DIR, CHEATS_SWITCH_FILE,
+    backup_save_once, cheat_path, enabled_codes, parse_cht, read_cheats, set_enables,
+    write_cheat_enables, Cheat, CHEATS_DIR,
 };
 pub use core::{core_for, read_selected_cores, write_selected_core, Core, SELECTED_CORE_FILE};
 pub use gba::{header_clean, header_code, header_title};

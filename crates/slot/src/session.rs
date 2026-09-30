@@ -31,6 +31,8 @@ pub struct Session {
     /// A reload for a link is underway: the core in the slot was spawned for it, and `App` is
     /// waiting to hear whether it loaded. See `reload_for_link`.
     reloading: bool,
+    /// The cheats the open list was made from, and whose cart they are. See `open_cheats`.
+    cheat_list: Option<(String, Vec<slot_store::Cheat>)>,
 }
 
 impl Session {
@@ -52,6 +54,7 @@ impl Session {
             fast: false,
             motor: 0,
             reloading: false,
+            cheat_list: None,
         }
     }
 
@@ -277,7 +280,14 @@ impl Session {
         // SELECT+X. Carried here for the same reason colour correction is: `App` never touches
         // the card's cheat files or the core.
         if self.app.take_cheats_toggle() {
-            self.toggle_cheats();
+            self.open_cheats();
+        }
+        if let Some(flags) = self.app.take_cheat_commit() {
+            self.commit_cheats(flags);
+        }
+        // A list that closed with nothing changed leaves nothing to collect.
+        if !self.app.cheat_menu_open() {
+            self.cheat_list = None;
         }
         // A link picked in a mode the running core was not loaded with. Carried out here for the
         // same reason the wire is: `App` never touches the core.
@@ -425,7 +435,10 @@ impl Session {
     /// The screens that have taken the panel away from a cart still seated. The switcher is
     /// not one of them: it has its own phase and `sync_speed` names it separately.
     fn held(&self) -> bool {
-        self.app.power_menu().is_some() || self.app.game_menu_open() || self.app.shutting_down()
+        self.app.power_menu().is_some()
+            || self.app.game_menu_open()
+            || self.app.cheat_menu_open()
+            || self.app.shutting_down()
     }
 
     fn dozing(&self) -> bool {
@@ -587,7 +600,7 @@ impl Session {
         // Queued behind the load, which is the first thing the worker does, so they land on a
         // loaded game. Never for a cable session: both devices run both consoles from the
         // host's state, and a cheat on one is a machine the other is not simulating.
-        if self.app.link_player().is_none() && slot_store::cheats_on(&self.root, stem) {
+        if self.app.link_player().is_none() {
             let codes = slot_store::enabled_codes(&slot_store::read_cheats(&self.root, stem));
             if !codes.is_empty() {
                 slot_store::backup_save_once(&self.root, stem);
@@ -614,35 +627,51 @@ impl Session {
         self.reloading = true;
     }
 
-    /// SELECT+X: the seated cart's switch flipped, written to the card, and the cheats it now
-    /// names handed to the core. The file is read again rather than remembered, so a `.cht`
-    /// edited over USB since the cart went in is what runs.
-    fn toggle_cheats(&mut self) {
+    /// SELECT+X: the seated cart's cheats read off the card and put up as a list. Read fresh
+    /// every time rather than remembered, so a `.cht` edited over USB since the cart went in is
+    /// what the list shows. Kept here as well, so the flags the list closes on can be matched
+    /// back to the lines of the file they came from.
+    fn open_cheats(&mut self) {
         let Some(stem) = self.app.seated_cart().map(|c| c.stem.clone()) else {
             return;
         };
-        let Some(emu) = &self.emu else {
-            return;
-        };
-        let codes = slot_store::enabled_codes(&slot_store::read_cheats(&self.root, &stem));
-        if codes.is_empty() {
+        let cheats = slot_store::read_cheats(&self.root, &stem);
+        if cheats.is_empty() {
             self.app.show_toast(Toast::NoCheats);
             return;
         }
-        let on = !slot_store::cheats_on(&self.root, &stem);
-        if let Err(e) = slot_store::write_cheats_on(&self.root, &stem, on) {
-            // Still carried out: the game in hand is what the player is looking at, and the
-            // card only decides what the next insert starts with.
-            eprintln!("slot: cheats: could not write the switch for {stem}: {e}");
+        self.app
+            .open_cheat_menu(cheats.iter().map(|c| (c.title(), c.enabled)).collect());
+        if self.app.cheat_menu_open() {
+            self.cheat_list = Some((stem, cheats));
         }
-        if on {
+    }
+
+    /// The list closed on a change. The file is written first, so the card and the running game
+    /// never disagree for longer than it takes to write one small file; then the core is handed
+    /// every cheat that is now on, which replaces whatever it was running.
+    fn commit_cheats(&mut self, flags: Vec<bool>) {
+        let Some((stem, mut cheats)) = self.cheat_list.take() else {
+            return;
+        };
+        for (c, on) in cheats.iter_mut().zip(flags) {
+            c.enabled = on;
+        }
+        if let Err(e) = slot_store::write_cheat_enables(&self.root, &stem, &cheats) {
+            // Still carried out: the game in hand is what the player is looking at. The card
+            // only decides what the next insert starts with.
+            eprintln!("slot: cheats: could not write {stem}.cht: {e}");
+        }
+        let codes = slot_store::enabled_codes(&cheats);
+        let any = !codes.is_empty();
+        if any {
             slot_store::backup_save_once(&self.root, &stem);
-            emu.set_cheats(codes);
-            self.app.show_toast(Toast::CheatsOn);
-        } else {
-            emu.set_cheats(Vec::new());
-            self.app.show_toast(Toast::CheatsOff);
         }
+        if let Some(emu) = &self.emu {
+            emu.set_cheats(codes);
+        }
+        self.app
+            .show_toast(if any { Toast::CheatsOn } else { Toast::CheatsOff });
     }
 
     /// Follows a reload for a link to its end, which `App` is waiting on. A core that will not

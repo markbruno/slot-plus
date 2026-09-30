@@ -4,6 +4,7 @@ mod barcode;
 mod battery;
 mod board;
 mod cart;
+mod cheat_menu;
 mod clock;
 mod draw;
 mod footer;
@@ -37,7 +38,13 @@ pub use cart::{
     cart_face, cart_shadow, clean_label, label_colour, label_panel, label_tags, label_text,
     CartFace, CART_H, CART_W, LABEL_H, LABEL_W, LABEL_X, LABEL_Y,
 };
-pub use clock::{clock_label, date_time_text, hhmm, set_clock_hint_face, ClockPicker, Field};
+pub use clock::{
+    clock_label, date_time_text, date_time_text_as, hhmm, hhmm_as, set_clock_hint_face,
+    ClockPicker, Field,
+};
+pub use cheat_menu::{
+    cheat_label_face, cheat_label_width, cheat_legend_faces, cheat_window, CheatMenu, CHEAT_ROWS,
+};
 pub use draw::{Draw, TexId, OUT_H, OUT_W};
 pub use footer::{draw_footer, Printed};
 pub use hud::{

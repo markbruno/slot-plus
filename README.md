@@ -39,11 +39,21 @@ cheat0_code = "82003B4C+0063"
 cheat0_enable = true
 ```
 
-Only cheats with `cheatN_enable = true` run. Edit the file on a computer to choose them.
+Cheats marked `cheatN_enable = true` turn on when the game starts.
 
-In a game, `SELECT` + `X` turns all of that game's enabled cheats off and on again. The
-choice is remembered per game in `System/cheats.ini`. Cheats are skipped in link cable
-sessions.
+To choose cheats on the device, press `SELECT` + `X` in a game. The game pauses and a list of
+that game's cheats appears:
+
+| Input          | Action                                   |
+| -------------- | ---------------------------------------- |
+| `Up` `Down`    | Move through the list                    |
+| `L1` `R1`      | Jump a page                              |
+| `A`            | Turn the highlighted cheat on or off     |
+| `Left` `Right` | Turn it off / on                         |
+| `B`            | Close the list and go back to the game   |
+
+Your choices are written back into the `.cht` file, so they're kept for next time and the file
+still works in RetroArch. Cheats are skipped in link cable sessions.
 
 The first time cheats run on a game, its battery save is copied to
 `Saves/GBA/<rom name>.sav.before-cheats`. Some cheats can break a save for good, so keep that
@@ -51,6 +61,12 @@ copy until you're sure.
 
 mGBA supports GameShark, Action Replay and CodeBreaker codes. If a code does nothing on gpSP,
 try the game on mGBA.
+
+## 12-hour clock
+
+Tap `MENU` on the carousel and turn on **12-Hour Clock** to show times as 3:07 PM rather
+than 15:07: on the shelf, in the menu's Date & Time, and on older save states. The screen for
+setting the clock still uses 24-hour time.
 
 ## AI Disclosure
 

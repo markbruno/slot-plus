@@ -25,10 +25,10 @@ pub enum Toast {
     /// rasterised per variant, so the state has to be in the string.
     ColourOn,
     ColourOff,
-    /// SELECT+X. Two variants for the same reason as the colour pair.
+    /// The cheat list closing on a change: on when any cheat is left on, off when none are.
     CheatsOn,
     CheatsOff,
-    /// SELECT+X on a cart with no enabled cheat in its file, or on a core that has no cheats.
+    /// SELECT+X on a cart with no cheat file, or one with no cheats in it.
     NoCheats,
     /// A shader from `Shaders/` that the driver would not compile. The LCD look is back.
     ShaderFailed,
@@ -72,7 +72,7 @@ impl Toast {
             Toast::ColourOff => "Correction Off",
             Toast::CheatsOn => "Cheats On",
             Toast::CheatsOff => "Cheats Off",
-            Toast::NoCheats => "No cheats enabled",
+            Toast::NoCheats => "No cheats found",
             Toast::ShaderFailed => "Shader failed",
         }
     }
