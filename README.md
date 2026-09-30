@@ -1,4 +1,4 @@
-# slot.
+# slot-plus.
 
 A bespoke, GBA-centric frontend for the Anbernic RG SP.
 
